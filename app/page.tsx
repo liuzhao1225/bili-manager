@@ -1,6 +1,8 @@
 import { getAccounts } from './actions'
 import ClientWrapper from '@/components/ClientWrapper'
 
+export const dynamic = 'force-dynamic'
+
 export default async function Home() {
   const accounts = await getAccounts()
 

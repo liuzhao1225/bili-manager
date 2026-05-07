@@ -3,11 +3,12 @@
 import { useState, useEffect, useActionState } from 'react'
 import { useFormStatus } from 'react-dom'
 import { createAccount, updateAccount } from '@/app/actions'
-import { BiliAccount } from '@/lib/types'
+import { BiliAccountSummary } from '@/lib/types'
 import { Upload, Save, ExternalLink } from 'lucide-react'
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
 
 function SubmitButton({ label }: { label: string }) {
@@ -20,7 +21,7 @@ function SubmitButton({ label }: { label: string }) {
 }
 
 interface AccountFormProps {
-  account?: BiliAccount
+  account?: BiliAccountSummary
   onCancel: () => void
   onSuccess: () => void
 }
@@ -30,8 +31,8 @@ export function AccountForm({ account, onCancel, onSuccess }: AccountFormProps) 
   const [fileName, setFileName] = useState<string>('')
 
   // 生成脱敏的 Server Chan Key 显示
-  const maskedServerChanKey = account?.server_chan_key 
-    ? `${account.server_chan_key.slice(0, 3)}••••••••${account.server_chan_key.slice(-4)}`
+  const maskedServerChanKey = account?.has_server_chan_key && account.server_chan_key_suffix
+    ? `••••${account.server_chan_key_suffix}`
     : undefined
 
   useEffect(() => {
@@ -84,7 +85,6 @@ export function AccountForm({ account, onCancel, onSuccess }: AccountFormProps) 
             id="serverChanKey"
             type="text"
             name="serverChanKey"
-            defaultValue={account?.server_chan_key}
             placeholder="SCU..."
           />
         )}
@@ -101,21 +101,33 @@ export function AccountForm({ account, onCancel, onSuccess }: AccountFormProps) 
 
       <div className="space-y-2">
         <Label>
-          Cookies 文件 (.txt) {account && <span className="text-muted-foreground font-normal ml-2">(可选 - 上传以更新)</span>}
+          Cookies {account && <span className="text-muted-foreground font-normal ml-2">(可选 - 粘贴或上传以更新)</span>}
         </Label>
-        <div className="relative border-2 border-dashed border-input hover:bg-accent/50 transition rounded-lg p-6 text-center cursor-pointer">
-          <input
+        <Textarea
+          name="cookieText"
+          rows={8}
+          placeholder={`# Netscape HTTP Cookie File
+.bilibili.com\tTRUE\t/\tFALSE\t1793695705\tDedeUserID\t1263732318
+.bilibili.com\tTRUE\t/\tTRUE\t1793695705\tSESSDATA\t...`}
+          className="font-mono text-xs"
+        />
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <div className="h-px flex-1 bg-border" />
+          <span>或上传 cookies.txt</span>
+          <div className="h-px flex-1 bg-border" />
+        </div>
+        <div className="relative border-2 border-dashed border-input hover:bg-accent/50 transition-colors rounded-lg p-6 text-center cursor-pointer">
+          <Input
             type="file"
             name="cookieFile"
             accept=".txt"
-            required={!account}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            onChange={(e) => setFileName(e.target.files?.[0]?.name || '')}
+            className="absolute inset-0 h-full opacity-0 cursor-pointer"
+            onChange={(event) => setFileName(event.target.files?.[0]?.name || '')}
           />
           <div className="flex flex-col items-center gap-2 text-muted-foreground">
             <Upload className="h-8 w-8" />
             <span className="text-sm font-medium">
-              {fileName || (account ? '点击或拖拽以替换 Cookies' : '点击或拖拽上传 cookies.txt 文件')}
+              {fileName || '点击或拖拽上传 cookies.txt 文件'}
             </span>
           </div>
         </div>
@@ -134,7 +146,7 @@ export function AccountForm({ account, onCancel, onSuccess }: AccountFormProps) 
           <br />
           2. 访问 <a href="https://www.bilibili.com/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">bilibili.com</a> 并登录您的账号
           <br />
-          3. 点击插件图标，选择 "Export" 导出 cookies.txt 文件
+          3. 点击插件图标，选择 Export 导出 cookies.txt 文件
         </p>
       </div>
 

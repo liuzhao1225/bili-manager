@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { BiliAccount } from '@/lib/types'
+import { BiliAccountSummary } from '@/lib/types'
 import { AccountCard } from './AccountCard'
 import { AccountForm } from './AccountForm'
 import { Plus } from 'lucide-react'
@@ -15,7 +15,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 
-export default function ClientWrapper({ accounts }: { accounts: BiliAccount[] | null }) {
+export default function ClientWrapper({ accounts }: { accounts: BiliAccountSummary[] | null }) {
   const [isAdding, setIsAdding] = useState(false)
   const accountList = accounts || []
 

@@ -157,7 +157,7 @@ A: 访问 [https://sct.ftqq.com/](https://sct.ftqq.com/)，微信扫码登录后
 
 1. 点击 "添加账号" 按钮
 2. 输入账号名称（自定义，例如"我的大号"）
-3. 上传从 B 站导出的 cookies.txt 文件
+3. 粘贴从 B 站导出的 Cookies 内容，或上传 cookies.txt 文件
 4. （可选）填入 Server 酱推送密钥
 5. 点击 "创建"
 
@@ -171,9 +171,31 @@ A: 访问 [https://sct.ftqq.com/](https://sct.ftqq.com/)，微信扫码登录后
 
 点击账号卡片上的删除图标，确认后即可删除。
 
+## Chrome 扩展一键上传
+
+仓库内置了一个本地 Chrome 扩展，路径为 `chrome-extension/`。它是自包含工具，不依赖 Next.js 应用运行，只复用同一个 Supabase 表结构和字段。
+
+扩展会读取当前 Chrome 中的 Bilibili Cookie，然后直接写入 Supabase 的 `bili_account` 表。
+
+### 扩展配置
+
+扩展需要配置 Supabase 的 `Project URL` 和 `anon/public key`，可在 Supabase Dashboard 的 Settings -> API 中找到。
+
+### 安装扩展
+
+1. 打开 Chrome 的 `chrome://extensions/`
+2. 开启右上角「开发者模式」
+3. 点击「加载已解压的扩展程序」
+4. 选择本仓库的 `chrome-extension/` 目录
+5. 点击扩展图标，填写 Supabase URL 和 anon key
+6. 在 Chrome 中登录 B 站后，点击「上传当前 B 站 Cookie」
+
+扩展会记住 Supabase 配置、账号名称和 Server 酱 Key。账号名称留空时，会使用 Cookie 里的 B 站 UID。
+
 ## 安全说明
 
 - ⚠️ Cookies 和 Server 酱密钥包含敏感信息，请勿分享给他人
+- 🔑 Chrome 扩展会保存 Supabase anon key，只建议个人自用，不要打包公开分发
 - 🔒 本项目使用 Supabase RLS（行级安全）保护数据
 - 🔐 编辑账号时，敏感密钥会进行脱敏显示
 - 🚫 不同账号的用户 ID 不可互相替换

@@ -1,6 +1,6 @@
 'use client'
 
-import { BiliAccount } from '@/lib/types'
+import { BiliAccountSummary } from '@/lib/types'
 import { deleteAccount } from '@/app/actions'
 import { Trash2, Edit, Key, User, CreditCard, ExternalLink } from 'lucide-react'
 import { useState } from 'react'
@@ -9,7 +9,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
@@ -25,7 +24,7 @@ import {
 } from "@/components/ui/dialog"
 import { toast } from "sonner"
 
-export function AccountCard({ account }: { account: BiliAccount }) {
+export function AccountCard({ account }: { account: BiliAccountSummary }) {
   const [isEditing, setIsEditing] = useState(false)
 
   const handleDelete = async () => {
@@ -33,7 +32,7 @@ export function AccountCard({ account }: { account: BiliAccount }) {
       try {
         await deleteAccount(account.dede_user_id)
         toast.success("账号已删除")
-      } catch (e) {
+      } catch {
         toast.error("删除账号失败")
       }
     }
@@ -98,13 +97,13 @@ export function AccountCard({ account }: { account: BiliAccount }) {
         <div className="flex items-center gap-2 text-muted-foreground">
           <Key className="h-3 w-3" />
           <span className="font-mono text-xs">
-            {account.server_chan_key ? '••••' + account.server_chan_key.slice(-4) : '未配置'}
+            {account.has_server_chan_key ? `••••${account.server_chan_key_suffix}` : '未配置'}
           </span>
         </div>
         <div className="flex items-center gap-2">
            <CreditCard className="h-3 w-3 text-muted-foreground" />
            <Badge variant="secondary" className="font-mono text-xs font-normal">
-             JCT: {account.bili_jct.slice(0, 6)}...
+             JCT: {account.bili_jct_prefix}...
            </Badge>
         </div>
       </CardContent>

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="popup.css" />
+    <title>Bili Manager</title>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Bili Manager</h1>
+        <p>读取当前 Chrome 的 B 站 Cookie 并上传。</p>
+      </header>
+
+      <label>
+        Supabase URL
+        <input id="supabaseUrl" type="url" placeholder="https://xxxx.supabase.co" autocomplete="off" />
+      </label>
+
+      <label>
+        Supabase anon key
+        <input id="supabaseAnonKey" type="password" autocomplete="off" />
+      </label>
+
+      <label>
+        账号名称
+        <input id="username" type="text" placeholder="留空则使用 B 站 UID" />
+      </label>
+
+      <label>
+        Server 酱 Key
+        <input id="serverChanKey" type="password" placeholder="可选" />
+      </label>
+
+      <button id="upload" type="button">上传当前 B 站 Cookie</button>
+      <p id="status" role="status"></p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
