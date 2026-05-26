@@ -1,10 +1,10 @@
-import { getAccounts, getTasks } from './actions'
+import { getAccounts } from './actions'
 import ClientWrapper from '@/components/ClientWrapper'
 
 export const dynamic = 'force-dynamic'
 
 export default async function Home() {
-  const [accounts, tasks] = await Promise.all([getAccounts(), getTasks()])
+  const accounts = await getAccounts()
 
   return (
     <main className="min-h-screen bg-background p-8">
@@ -16,7 +16,7 @@ export default async function Home() {
           </p>
         </header>
         
-        <ClientWrapper accounts={accounts} tasks={tasks} />
+        <ClientWrapper accounts={accounts} />
       </div>
     </main>
   )

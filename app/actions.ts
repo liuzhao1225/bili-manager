@@ -3,7 +3,7 @@
 import { supabase } from '@/lib/supabase'
 import { parseNetscapeCookies, validateCookies } from '@/lib/cookie-parser'
 import { revalidatePath } from 'next/cache'
-import { BiliAccountSummary, YoudubTaskSummary } from '@/lib/types'
+import { BiliAccountSummary } from '@/lib/types'
 
 type AccountActionState = {
   message: string
@@ -52,7 +52,7 @@ function getErrorMessage(error: unknown) {
 
 function parseYoutubeUrl(url: string) {
   const cleanUrl = url.trim().split(/\s+/, 1)[0].split('&', 1)[0]
-  const patterns: Array<[YoudubTaskSummary['source_type'], RegExp]> = [
+  const patterns: Array<['video' | 'short', RegExp]> = [
     ['short', /(?:https?:\/\/)?(?:www\.)?youtube\.com\/shorts\/([A-Za-z0-9_-]{11})/],
     ['video', /(?:https?:\/\/)?(?:www\.)?youtube\.com\/watch\?v=([A-Za-z0-9_-]{11})/],
     ['video', /(?:https?:\/\/)?youtu\.be\/([A-Za-z0-9_-]{11})/],
@@ -286,38 +286,10 @@ export async function getAccounts() {
   return data.map(toAccountSummary)
 }
 
-function toTaskSummary(task: YoudubTaskSummary): YoudubTaskSummary {
-  return {
-    ...task,
-    priority: Number(task.priority || 1),
-    effective_priority: Number(task.effective_priority ?? task.priority ?? 1),
-    attempt_count: Number(task.attempt_count || 0),
-  }
-}
-
-export async function getTasks() {
-  const { data, error } = await supabase
-    .from('youdub_task')
-    .select('task_key, youtube_id, source_type, url, priority, effective_priority, status, skip_prechecks, source, phase, attempt_count, locked_by, locked_until, failure_reason, failure_detail, zh_bvid, en_bvid, created_at, updated_at, started_at, finished_at')
-    .order('effective_priority', { ascending: false })
-    .order('created_at', { ascending: true })
-    .limit(200)
-
-  if (error) {
-    if ('code' in error && error.code !== 'PGRST205') {
-      console.error('Task query error:', error)
-    }
-    return []
-  }
-
-  return (data || []).map((task) => toTaskSummary(task as YoudubTaskSummary))
-}
-
 export async function createTask(_prevState: TaskActionState, formData: FormData) {
   try {
-    const priority = getTaskPriority(formData, 4)
-    const requestedSource = getFormString(formData, 'source')
-    const source = priority >= 4 ? 'force' : (requestedSource || 'manual')
+    const priority = getTaskPriority(formData, 2)
+    const source = priority >= 4 ? 'force' : 'manual'
     const urls = splitTaskUrls(formData)
 
     if (urls.length === 0) {
@@ -391,57 +363,4 @@ export async function createTask(_prevState: TaskActionState, formData: FormData
   } catch (error: unknown) {
     return { message: `错误: ${getErrorMessage(error)}`, success: false }
   }
-}
-
-export async function updateTaskPriority(formData: FormData) {
-  const taskKey = getFormString(formData, 'task_key')
-  const priority = getTaskPriority(formData, 1)
-  const { error } = await supabase
-    .from('youdub_task')
-    .update({
-      priority,
-      skip_prechecks: priority >= 4,
-    })
-    .eq('task_key', taskKey)
-
-  if (error) throw error
-  revalidatePath('/')
-}
-
-export async function requeueTask(formData: FormData) {
-  const taskKey = getFormString(formData, 'task_key')
-  const priority = getTaskPriority(formData, 1)
-  const { error } = await supabase
-    .from('youdub_task')
-    .update({
-      priority,
-      status: 'queued',
-      skip_prechecks: priority >= 4,
-      phase: null,
-      locked_by: null,
-      locked_until: null,
-      failure_reason: null,
-      failure_detail: null,
-      started_at: null,
-      finished_at: null,
-    })
-    .eq('task_key', taskKey)
-
-  if (error) throw error
-  revalidatePath('/')
-}
-
-export async function pauseTask(formData: FormData) {
-  const taskKey = getFormString(formData, 'task_key')
-  const { error } = await supabase
-    .from('youdub_task')
-    .update({
-      status: 'paused',
-      locked_by: null,
-      locked_until: null,
-    })
-    .eq('task_key', taskKey)
-
-  if (error) throw error
-  revalidatePath('/')
 }

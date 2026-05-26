@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { BiliAccountSummary, YoudubTaskSummary } from '@/lib/types'
+import { BiliAccountSummary } from '@/lib/types'
 import { AccountCard } from './AccountCard'
 import { AccountForm } from './AccountForm'
 import { TaskManager } from './TaskManager'
@@ -24,14 +24,11 @@ import {
 
 export default function ClientWrapper({
   accounts,
-  tasks,
 }: {
   accounts: BiliAccountSummary[] | null
-  tasks: YoudubTaskSummary[] | null
 }) {
   const [isAdding, setIsAdding] = useState(false)
   const accountList = accounts || []
-  const taskList = tasks || []
 
   return (
     <Tabs defaultValue="tasks" className="space-y-6">
@@ -41,7 +38,7 @@ export default function ClientWrapper({
       </TabsList>
 
       <TabsContent value="tasks">
-        <TaskManager tasks={taskList} />
+        <TaskManager />
       </TabsContent>
 
       <TabsContent value="accounts" className="space-y-6">
