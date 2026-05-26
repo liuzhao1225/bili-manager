@@ -1,9 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { BiliAccountSummary } from '@/lib/types'
+import { BiliAccountSummary, YoudubTaskSummary } from '@/lib/types'
 import { AccountCard } from './AccountCard'
 import { AccountForm } from './AccountForm'
+import { TaskManager } from './TaskManager'
 import { Plus } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import {
@@ -15,12 +16,21 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 
-export default function ClientWrapper({ accounts }: { accounts: BiliAccountSummary[] | null }) {
+export default function ClientWrapper({
+  accounts,
+  tasks,
+}: {
+  accounts: BiliAccountSummary[] | null
+  tasks: YoudubTaskSummary[] | null
+}) {
   const [isAdding, setIsAdding] = useState(false)
   const accountList = accounts || []
+  const taskList = tasks || []
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
+      <TaskManager tasks={taskList} />
+
       <div className="flex justify-between items-center">
         <h2 className="text-lg font-semibold tracking-tight">账号列表 ({accountList.length})</h2>
         <Dialog open={isAdding} onOpenChange={setIsAdding}>

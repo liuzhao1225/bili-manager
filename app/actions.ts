@@ -3,9 +3,14 @@
 import { supabase } from '@/lib/supabase'
 import { parseNetscapeCookies, validateCookies } from '@/lib/cookie-parser'
 import { revalidatePath } from 'next/cache'
-import { BiliAccountSummary } from '@/lib/types'
+import { BiliAccountSummary, YoudubTaskSummary } from '@/lib/types'
 
 type AccountActionState = {
+  message: string
+  success: boolean
+}
+
+type TaskActionState = {
   message: string
   success: boolean
 }
@@ -43,6 +48,64 @@ async function readCookieContent(formData: FormData) {
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
+}
+
+function parseYoutubeUrl(url: string) {
+  const cleanUrl = url.trim().split(/\s+/, 1)[0].split('&', 1)[0]
+  const patterns: Array<[YoudubTaskSummary['source_type'], RegExp]> = [
+    ['short', /(?:https?:\/\/)?(?:www\.)?youtube\.com\/shorts\/([A-Za-z0-9_-]{11})/],
+    ['video', /(?:https?:\/\/)?(?:www\.)?youtube\.com\/watch\?v=([A-Za-z0-9_-]{11})/],
+    ['video', /(?:https?:\/\/)?youtu\.be\/([A-Za-z0-9_-]{11})/],
+  ]
+
+  for (const [sourceType, pattern] of patterns) {
+    const match = cleanUrl.match(pattern)
+    if (!match) continue
+
+    const youtubeId = match[1]
+    return {
+      sourceType,
+      youtubeId,
+      url: sourceType === 'short'
+        ? `https://www.youtube.com/shorts/${youtubeId}`
+        : `https://www.youtube.com/watch?v=${youtubeId}`,
+      taskKey: `${sourceType}:${youtubeId}`,
+    }
+  }
+
+  throw new Error('无效的 YouTube URL')
+}
+
+function getFormInt(formData: FormData, name: string, fallback: number) {
+  const parsed = Number.parseInt(getFormString(formData, name), 10)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function buildTaskPayload(formData: FormData) {
+  const url = getFormString(formData, 'url')
+  const priority = getFormInt(formData, 'priority', 1)
+  const parsed = parseYoutubeUrl(url)
+  const requestedSource = getFormString(formData, 'source')
+  const source = requestedSource || (priority >= 4 ? 'force' : 'manual')
+  const skipPrechecks = formData.get('skip_prechecks') === 'on' || priority >= 4
+
+  return {
+    task_key: parsed.taskKey,
+    youtube_id: parsed.youtubeId,
+    source_type: parsed.sourceType,
+    url: parsed.url,
+    priority,
+    status: 'queued',
+    skip_prechecks: skipPrechecks,
+    source,
+    phase: null,
+    locked_by: null,
+    locked_until: null,
+    failure_reason: null,
+    failure_detail: null,
+    started_at: null,
+    finished_at: null,
+  }
 }
 
 function parseAccountInput(input: ImportAccountInput) {
@@ -206,4 +269,125 @@ export async function getAccounts() {
   
   if (error) throw error
   return data.map(toAccountSummary)
+}
+
+function toTaskSummary(task: YoudubTaskSummary): YoudubTaskSummary {
+  return {
+    ...task,
+    priority: Number(task.priority || 1),
+    effective_priority: Number(task.effective_priority ?? task.priority ?? 1),
+    attempt_count: Number(task.attempt_count || 0),
+  }
+}
+
+export async function getTasks() {
+  const { data, error } = await supabase
+    .from('youdub_task')
+    .select('task_key, youtube_id, source_type, url, priority, effective_priority, status, skip_prechecks, source, phase, attempt_count, locked_by, locked_until, failure_reason, failure_detail, zh_bvid, en_bvid, created_at, updated_at, started_at, finished_at')
+    .order('effective_priority', { ascending: false })
+    .order('created_at', { ascending: true })
+    .limit(200)
+
+  if (error) {
+    if ('code' in error && error.code !== 'PGRST205') {
+      console.error('Task query error:', error)
+    }
+    return []
+  }
+
+  return (data || []).map((task) => toTaskSummary(task as YoudubTaskSummary))
+}
+
+export async function createTask(_prevState: TaskActionState, formData: FormData) {
+  try {
+    const payload = buildTaskPayload(formData)
+
+    const { data: existing, error: selectError } = await supabase
+      .from('youdub_task')
+      .select('task_key, status')
+      .eq('task_key', payload.task_key)
+      .maybeSingle()
+
+    if (selectError) {
+      return { message: `数据库错误: ${selectError.message}`, success: false }
+    }
+
+    if (existing?.status === 'processing') {
+      return { message: '任务正在处理中，未覆盖当前锁定任务', success: false }
+    }
+
+    if (
+      existing?.status &&
+      ['succeeded', 'failed'].includes(existing.status) &&
+      payload.priority < 4
+    ) {
+      return { message: '任务已有终态记录；请使用重新排队，或用 priority>=4 强制发布', success: false }
+    }
+
+    const { error } = await supabase
+      .from('youdub_task')
+      .upsert(payload, { onConflict: 'task_key' })
+
+    if (error) {
+      return { message: `数据库错误: ${error.message}`, success: false }
+    }
+
+    revalidatePath('/')
+    return { message: `任务已写入: ${payload.task_key}`, success: true }
+  } catch (error: unknown) {
+    return { message: `错误: ${getErrorMessage(error)}`, success: false }
+  }
+}
+
+export async function updateTaskPriority(formData: FormData) {
+  const taskKey = getFormString(formData, 'task_key')
+  const priority = getFormInt(formData, 'priority', 1)
+  const { error } = await supabase
+    .from('youdub_task')
+    .update({
+      priority,
+      skip_prechecks: priority >= 4,
+    })
+    .eq('task_key', taskKey)
+
+  if (error) throw error
+  revalidatePath('/')
+}
+
+export async function requeueTask(formData: FormData) {
+  const taskKey = getFormString(formData, 'task_key')
+  const priority = getFormInt(formData, 'priority', 1)
+  const { error } = await supabase
+    .from('youdub_task')
+    .update({
+      priority,
+      status: 'queued',
+      skip_prechecks: priority >= 4,
+      phase: null,
+      locked_by: null,
+      locked_until: null,
+      failure_reason: null,
+      failure_detail: null,
+      started_at: null,
+      finished_at: null,
+    })
+    .eq('task_key', taskKey)
+
+  if (error) throw error
+  revalidatePath('/')
+}
+
+export async function pauseTask(formData: FormData) {
+  const taskKey = getFormString(formData, 'task_key')
+  const { error } = await supabase
+    .from('youdub_task')
+    .update({
+      status: 'paused',
+      locked_by: null,
+      locked_until: null,
+    })
+    .eq('task_key', taskKey)
+
+  if (error) throw error
+  revalidatePath('/')
 }
