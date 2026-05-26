@@ -7,13 +7,19 @@ import { PlusCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 
 const PRIORITY_OPTIONS = [
-  { value: 'force', label: 'Force' },
-  { value: 'high', label: 'High' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'low', label: 'Low' },
+  { value: 'force', label: 'Force', description: '强制发布。跳过时长、敏感性、屏蔽频道和已发布检查，适合明确要重新跑完整流程并重新上传的任务。' },
+  { value: 'high', label: 'High', description: '高优先级。适合订阅频道或明确高价值来源，会优先于普通任务处理。' },
+  { value: 'medium', label: 'Medium', description: '中优先级。默认选择，适合手动批量添加或 B 站监控发现的候选视频。' },
+  { value: 'low', label: 'Low', description: '低优先级。适合普通候选、补充素材或不急于处理的视频。' },
 ]
 
 function SubmitButton() {
@@ -28,22 +34,29 @@ function SubmitButton() {
 
 function PriorityCapsules() {
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-      {PRIORITY_OPTIONS.map((option) => (
-        <label key={option.value} className="cursor-pointer">
-          <input
-            type="radio"
-            name="priority"
-            value={option.value}
-            defaultChecked={option.value === 'medium'}
-            className="peer sr-only"
-          />
-          <span className="flex h-9 items-center justify-center rounded-full border px-3 text-sm font-medium text-muted-foreground transition-[color,background,border-color,box-shadow] peer-checked:border-primary peer-checked:bg-primary peer-checked:text-primary-foreground peer-focus-visible:ring-ring/50 peer-focus-visible:ring-[3px]">
-            {option.label}
-          </span>
-        </label>
-      ))}
-    </div>
+    <TooltipProvider>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {PRIORITY_OPTIONS.map((option) => (
+          <Tooltip key={option.value}>
+            <TooltipTrigger asChild>
+              <label className="cursor-pointer">
+                <input
+                  type="radio"
+                  name="priority"
+                  value={option.value}
+                  defaultChecked={option.value === 'medium'}
+                  className="peer sr-only"
+                />
+                <span className="flex h-9 items-center justify-center rounded-full border px-3 text-sm font-medium text-muted-foreground transition-[color,background,border-color,box-shadow] peer-checked:border-primary peer-checked:bg-primary peer-checked:text-primary-foreground peer-focus-visible:ring-ring/50 peer-focus-visible:ring-[3px]">
+                  {option.label}
+                </span>
+              </label>
+            </TooltipTrigger>
+            <TooltipContent>{option.description}</TooltipContent>
+          </Tooltip>
+        ))}
+      </div>
+    </TooltipProvider>
   )
 }
 
