@@ -81,13 +81,28 @@ function getFormInt(formData: FormData, name: string, fallback: number) {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
-function buildTaskPayload(formData: FormData) {
-  const url = getFormString(formData, 'url')
-  const priority = getFormInt(formData, 'priority', 1)
+function getTaskPriority(formData: FormData, fallback = 1) {
+  const value = getFormString(formData, 'priority').toLowerCase()
+  const named: Record<string, number> = {
+    low: 1,
+    medium: 2,
+    high: 3,
+    force: 4,
+  }
+  if (value in named) return named[value]
+  return getFormInt(formData, 'priority', fallback)
+}
+
+function splitTaskUrls(formData: FormData) {
+  const text = getFormString(formData, 'urls') || getFormString(formData, 'url')
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+}
+
+function buildTaskPayload(url: string, priority: number, source: string) {
   const parsed = parseYoutubeUrl(url)
-  const requestedSource = getFormString(formData, 'source')
-  const source = requestedSource || (priority >= 4 ? 'force' : 'manual')
-  const skipPrechecks = formData.get('skip_prechecks') === 'on' || priority >= 4
 
   return {
     task_key: parsed.taskKey,
@@ -96,7 +111,7 @@ function buildTaskPayload(formData: FormData) {
     url: parsed.url,
     priority,
     status: 'queued',
-    skip_prechecks: skipPrechecks,
+    skip_prechecks: priority >= 4,
     source,
     phase: null,
     locked_by: null,
@@ -300,40 +315,79 @@ export async function getTasks() {
 
 export async function createTask(_prevState: TaskActionState, formData: FormData) {
   try {
-    const payload = buildTaskPayload(formData)
+    const priority = getTaskPriority(formData, 4)
+    const requestedSource = getFormString(formData, 'source')
+    const source = priority >= 4 ? 'force' : (requestedSource || 'manual')
+    const urls = splitTaskUrls(formData)
 
-    const { data: existing, error: selectError } = await supabase
+    if (urls.length === 0) {
+      return { message: '缺少 YouTube URL', success: false }
+    }
+
+    const invalidUrls: string[] = []
+    const payloadsByKey = new Map<string, ReturnType<typeof buildTaskPayload>>()
+    for (const url of urls) {
+      try {
+        const payload = buildTaskPayload(url, priority, source)
+        payloadsByKey.set(payload.task_key, payload)
+      } catch {
+        invalidUrls.push(url)
+      }
+    }
+
+    const payloads = Array.from(payloadsByKey.values())
+    const duplicateCount = urls.length - invalidUrls.length - payloads.length
+    if (payloads.length === 0) {
+      return { message: `没有有效 URL，错误 ${invalidUrls.length} 条`, success: false }
+    }
+
+    const { data: existingRows, error: selectError } = await supabase
       .from('youdub_task')
       .select('task_key, status')
-      .eq('task_key', payload.task_key)
-      .maybeSingle()
+      .in('task_key', payloads.map((payload) => payload.task_key))
 
     if (selectError) {
       return { message: `数据库错误: ${selectError.message}`, success: false }
     }
 
-    if (existing?.status === 'processing') {
-      return { message: '任务正在处理中，未覆盖当前锁定任务', success: false }
-    }
+    const existingStatus = new Map(
+      (existingRows || []).map((row) => [row.task_key as string, row.status as string])
+    )
+    let processingSkipped = 0
+    let terminalSkipped = 0
+    const writablePayloads = payloads.filter((payload) => {
+      const status = existingStatus.get(payload.task_key)
+      if (status === 'processing') {
+        processingSkipped += 1
+        return false
+      }
+      if (status && ['succeeded', 'failed'].includes(status) && priority < 4) {
+        terminalSkipped += 1
+        return false
+      }
+      return true
+    })
 
-    if (
-      existing?.status &&
-      ['succeeded', 'failed'].includes(existing.status) &&
-      payload.priority < 4
-    ) {
-      return { message: '任务已有终态记录；请使用重新排队，或用 priority>=4 强制发布', success: false }
+    if (writablePayloads.length === 0) {
+      return {
+        message: `没有写入任务；处理中跳过 ${processingSkipped} 条，终态跳过 ${terminalSkipped} 条，无效 ${invalidUrls.length} 条`,
+        success: false,
+      }
     }
 
     const { error } = await supabase
       .from('youdub_task')
-      .upsert(payload, { onConflict: 'task_key' })
+      .upsert(writablePayloads, { onConflict: 'task_key' })
 
     if (error) {
       return { message: `数据库错误: ${error.message}`, success: false }
     }
 
     revalidatePath('/')
-    return { message: `任务已写入: ${payload.task_key}`, success: true }
+    return {
+      message: `任务已写入 ${writablePayloads.length} 条，重复 ${duplicateCount} 条，处理中跳过 ${processingSkipped} 条，终态跳过 ${terminalSkipped} 条，无效 ${invalidUrls.length} 条`,
+      success: true,
+    }
   } catch (error: unknown) {
     return { message: `错误: ${getErrorMessage(error)}`, success: false }
   }
@@ -341,7 +395,7 @@ export async function createTask(_prevState: TaskActionState, formData: FormData
 
 export async function updateTaskPriority(formData: FormData) {
   const taskKey = getFormString(formData, 'task_key')
-  const priority = getFormInt(formData, 'priority', 1)
+  const priority = getTaskPriority(formData, 1)
   const { error } = await supabase
     .from('youdub_task')
     .update({
@@ -356,7 +410,7 @@ export async function updateTaskPriority(formData: FormData) {
 
 export async function requeueTask(formData: FormData) {
   const taskKey = getFormString(formData, 'task_key')
-  const priority = getFormInt(formData, 'priority', 1)
+  const priority = getTaskPriority(formData, 1)
   const { error } = await supabase
     .from('youdub_task')
     .update({

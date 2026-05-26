@@ -7,8 +7,8 @@ import { YoudubTaskStatus, YoudubTaskSummary } from '@/lib/types'
 import { AlertCircle, ExternalLink, PauseCircle, PlusCircle, RotateCcw, Save } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 
 const STATUS_FILTERS: Array<YoudubTaskStatus | 'all'> = [
@@ -21,6 +21,12 @@ const STATUS_FILTERS: Array<YoudubTaskStatus | 'all'> = [
 ]
 
 const SOURCE_OPTIONS = ['force', 'manual', 'subscribed', 'bili_monitor', 'channel_script', 'import']
+const PRIORITY_OPTIONS = [
+  { value: 'force', label: 'Force' },
+  { value: 'high', label: 'High' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'low', label: 'Low' },
+]
 
 function statusVariant(status: YoudubTaskStatus) {
   if (status === 'failed') return 'destructive'
@@ -36,6 +42,34 @@ function SubmitButton() {
       {pending ? '写入中...' : '添加任务'}
     </Button>
   )
+}
+
+function PriorityCapsules({ defaultValue = 'force' }: { defaultValue?: string }) {
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      {PRIORITY_OPTIONS.map((option) => (
+        <label key={option.value} className="cursor-pointer">
+          <input
+            type="radio"
+            name="priority"
+            value={option.value}
+            defaultChecked={option.value === defaultValue}
+            className="peer sr-only"
+          />
+          <span className="flex h-9 items-center justify-center gap-1 rounded-full border px-3 text-sm font-medium text-muted-foreground transition-[color,background,border-color,box-shadow] peer-checked:border-primary peer-checked:bg-primary peer-checked:text-primary-foreground peer-focus-visible:ring-ring/50 peer-focus-visible:ring-[3px]">
+            {option.label}
+          </span>
+        </label>
+      ))}
+    </div>
+  )
+}
+
+function priorityValue(priority: number) {
+  if (priority >= 4) return 'force'
+  if (priority === 3) return 'high'
+  if (priority === 2) return 'medium'
+  return 'low'
 }
 
 function TaskStats({ tasks }: { tasks: YoudubTaskSummary[] }) {
@@ -116,13 +150,17 @@ function TaskRow({ task }: { task: YoudubTaskSummary }) {
       <td className="min-w-[210px] px-3 py-3 align-top">
         <form action={updateTaskPriority} className="flex items-center gap-2">
           <input type="hidden" name="task_key" value={task.task_key} />
-          <Input
+          <select
             name="priority"
-            type="number"
-            min="-1"
-            defaultValue={task.priority}
-            className="h-8 w-20"
-          />
+            defaultValue={priorityValue(task.priority)}
+            className="h-8 w-28 rounded-md border border-input bg-background px-2 text-sm"
+          >
+            {PRIORITY_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
           <Button type="submit" variant="outline" size="icon" className="h-8 w-8">
             <Save className="h-4 w-4" />
             <span className="sr-only">保存优先级</span>
@@ -131,7 +169,7 @@ function TaskRow({ task }: { task: YoudubTaskSummary }) {
         <div className="mt-2 flex gap-2">
           <form action={requeueTask}>
             <input type="hidden" name="task_key" value={task.task_key} />
-            <input type="hidden" name="priority" value={task.priority} />
+            <input type="hidden" name="priority" value={priorityValue(task.priority)} />
             <Button type="submit" variant="outline" size="sm">
               <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
               重排
@@ -178,21 +216,32 @@ export function TaskManager({ tasks }: { tasks: YoudubTaskSummary[] }) {
           <TaskStats tasks={tasks} />
         </div>
 
-        <form action={formAction} className="grid gap-3 rounded-md border p-3 lg:grid-cols-[minmax(280px,420px)_96px_150px_auto_auto] lg:items-end">
-          <div className="space-y-1.5">
-            <Label htmlFor="task-url">YouTube URL</Label>
-            <Input id="task-url" name="url" placeholder="https://www.youtube.com/watch?v=..." required />
+        <form action={formAction} className="grid gap-3 rounded-md border p-3 lg:min-w-[620px] lg:grid-cols-[1fr_150px_auto] lg:items-end">
+          <div className="space-y-1.5 lg:col-span-3">
+            <Label htmlFor="task-urls">YouTube URLs</Label>
+            <Textarea
+              id="task-urls"
+              name="urls"
+              rows={6}
+              required
+              className="min-h-36 font-mono text-xs"
+              placeholder={[
+                'https://www.youtube.com/watch?v=XBu54nfzxAQ',
+                'https://www.youtube.com/watch?v=rbu7Zu5X1zI',
+                'https://www.youtube.com/watch?v=zjkBMFhNj_g',
+              ].join('\n')}
+            />
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="task-priority">Priority</Label>
-            <Input id="task-priority" name="priority" type="number" defaultValue={4} />
+          <div className="space-y-1.5 lg:col-span-3">
+            <Label>Priority</Label>
+            <PriorityCapsules />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="task-source">Source</Label>
             <select
               id="task-source"
               name="source"
-              defaultValue="force"
+              defaultValue="manual"
               className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
             >
               {SOURCE_OPTIONS.map((source) => (
@@ -200,11 +249,9 @@ export function TaskManager({ tasks }: { tasks: YoudubTaskSummary[] }) {
               ))}
             </select>
           </div>
-          <label className="flex h-9 items-center gap-2 text-sm">
-            <input name="skip_prechecks" type="checkbox" defaultChecked className="h-4 w-4" />
-            跳过前置检查
-          </label>
-          <SubmitButton />
+          <div className="lg:col-span-2 lg:justify-self-end">
+            <SubmitButton />
+          </div>
         </form>
       </div>
 
