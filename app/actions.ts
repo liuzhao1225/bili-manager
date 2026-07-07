@@ -3,7 +3,7 @@
 import { supabase } from '@/lib/supabase'
 import { parseNetscapeCookies, validateCookies } from '@/lib/cookie-parser'
 import { revalidatePath } from 'next/cache'
-import { BiliAccountSummary } from '@/lib/types'
+import { BiliAccountSummary, TaskPriorityCountsResult, YoudubPriorityCount } from '@/lib/types'
 
 type AccountActionState = {
   message: string
@@ -28,6 +28,21 @@ type ImportAccountInput = {
   username?: string
   serverChanKey?: string
 }
+
+type ExistingTaskRow = {
+  task_key: string
+  status: string
+  priority: number | null
+}
+
+const TASK_PRIORITY_BUCKETS: Array<
+  Pick<YoudubPriorityCount, 'key' | 'label'> & { priority?: number; minPriority?: number }
+> = [
+  { key: 'low', label: 'Low', priority: 1 },
+  { key: 'medium', label: 'Medium', priority: 2 },
+  { key: 'high', label: 'High', priority: 3 },
+  { key: 'force', label: 'Force+', minPriority: 4 },
+]
 
 function getFormString(formData: FormData, name: string) {
   const value = formData.get(name)
@@ -286,6 +301,48 @@ export async function getAccounts() {
   return data.map(toAccountSummary)
 }
 
+export async function getTaskPriorityCounts(): Promise<TaskPriorityCountsResult> {
+  try {
+    const counts = await Promise.all(
+      TASK_PRIORITY_BUCKETS.map(async (bucket) => {
+        let query = supabase
+          .from('youdub_task')
+          .select('task_key', { count: 'exact', head: true })
+
+        if (bucket.minPriority !== undefined) {
+          query = query.gte('priority', bucket.minPriority)
+        } else {
+          query = query.eq('priority', bucket.priority)
+        }
+
+        const { count, error } = await query
+        if (error) throw error
+
+        return {
+          key: bucket.key,
+          label: bucket.label,
+          count: count ?? 0,
+        }
+      })
+    )
+
+    return {
+      counts,
+      fetched_at: new Date().toISOString(),
+    }
+  } catch (error: unknown) {
+    return {
+      counts: TASK_PRIORITY_BUCKETS.map((bucket) => ({
+        key: bucket.key,
+        label: bucket.label,
+        count: 0,
+      })),
+      fetched_at: null,
+      error: getErrorMessage(error),
+    }
+  }
+}
+
 export async function createTask(_prevState: TaskActionState, formData: FormData) {
   try {
     const priority = getTaskPriority(formData, 2)
@@ -315,25 +372,38 @@ export async function createTask(_prevState: TaskActionState, formData: FormData
 
     const { data: existingRows, error: selectError } = await supabase
       .from('youdub_task')
-      .select('task_key, status')
+      .select('task_key, status, priority')
       .in('task_key', payloads.map((payload) => payload.task_key))
 
     if (selectError) {
       return { message: `数据库错误: ${selectError.message}`, success: false }
     }
 
-    const existingStatus = new Map(
-      (existingRows || []).map((row) => [row.task_key as string, row.status as string])
+    const existingTasks = new Map(
+      ((existingRows || []) as ExistingTaskRow[]).map((row) => [
+        row.task_key,
+        {
+          status: row.status,
+          priority: Number(row.priority ?? 1),
+        },
+      ])
     )
     let processingSkipped = 0
     let terminalSkipped = 0
+    let lowerPrioritySkipped = 0
     const writablePayloads = payloads.filter((payload) => {
-      const status = existingStatus.get(payload.task_key)
-      if (status === 'processing') {
+      const existing = existingTasks.get(payload.task_key)
+      if (!existing) return true
+
+      if (existing.status === 'processing') {
         processingSkipped += 1
         return false
       }
-      if (status && ['succeeded', 'failed'].includes(status) && priority < 4) {
+      if (existing.priority > payload.priority) {
+        lowerPrioritySkipped += 1
+        return false
+      }
+      if (['succeeded', 'failed'].includes(existing.status) && payload.priority < 4) {
         terminalSkipped += 1
         return false
       }
@@ -342,7 +412,7 @@ export async function createTask(_prevState: TaskActionState, formData: FormData
 
     if (writablePayloads.length === 0) {
       return {
-        message: `没有写入任务；处理中跳过 ${processingSkipped} 条，终态跳过 ${terminalSkipped} 条，无效 ${invalidUrls.length} 条`,
+        message: `没有写入任务；处理中跳过 ${processingSkipped} 条，终态跳过 ${terminalSkipped} 条，优先级较低跳过 ${lowerPrioritySkipped} 条，无效 ${invalidUrls.length} 条`,
         success: false,
       }
     }
@@ -357,7 +427,7 @@ export async function createTask(_prevState: TaskActionState, formData: FormData
 
     revalidatePath('/')
     return {
-      message: `任务已写入 ${writablePayloads.length} 条，重复 ${duplicateCount} 条，处理中跳过 ${processingSkipped} 条，终态跳过 ${terminalSkipped} 条，无效 ${invalidUrls.length} 条`,
+      message: `任务已写入 ${writablePayloads.length} 条，重复 ${duplicateCount} 条，处理中跳过 ${processingSkipped} 条，终态跳过 ${terminalSkipped} 条，优先级较低跳过 ${lowerPrioritySkipped} 条，无效 ${invalidUrls.length} 条`,
       success: true,
     }
   } catch (error: unknown) {

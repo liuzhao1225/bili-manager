@@ -49,3 +49,15 @@ export type YoudubTaskSummary = {
   started_at?: string | null
   finished_at?: string | null
 }
+
+export type YoudubPriorityCount = {
+  key: 'low' | 'medium' | 'high' | 'force'
+  label: string
+  count: number
+}
+
+export type TaskPriorityCountsResult = {
+  counts: YoudubPriorityCount[]
+  fetched_at: string | null
+  error?: string
+}
