@@ -25,6 +25,7 @@ export type BiliCookies = {
 }
 
 export type YoudubTaskStatus = 'queued' | 'processing' | 'succeeded' | 'failed' | 'paused'
+export type YoudubPriorityKey = 'low' | 'medium' | 'high' | 'force'
 
 export type YoudubTaskSummary = {
   task_key: string
@@ -50,14 +51,21 @@ export type YoudubTaskSummary = {
   finished_at?: string | null
 }
 
-export type YoudubPriorityCount = {
-  key: 'low' | 'medium' | 'high' | 'force'
+export type YoudubStatusCount = {
+  key: YoudubTaskStatus
   label: string
   count: number
 }
 
+export type YoudubPriorityStatusRow = {
+  key: YoudubPriorityKey
+  label: string
+  counts: YoudubStatusCount[]
+}
+
 export type TaskPriorityCountsResult = {
-  counts: YoudubPriorityCount[]
+  rows: YoudubPriorityStatusRow[]
+  statuses: Array<Pick<YoudubStatusCount, 'key' | 'label'>>
   fetched_at: string | null
   error?: string
 }

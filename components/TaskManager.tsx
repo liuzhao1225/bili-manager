@@ -7,7 +7,7 @@ import { PlusCircle, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import type { TaskPriorityCountsResult, YoudubPriorityCount } from '@/lib/types'
+import type { TaskPriorityCountsResult, YoudubPriorityStatusRow } from '@/lib/types'
 import {
   Tooltip,
   TooltipContent,
@@ -73,14 +73,30 @@ function formatFetchedAt(value: string | null) {
   })
 }
 
-function PriorityCountTile({ item }: { item: YoudubPriorityCount }) {
+function buildEmptyRows(): YoudubPriorityStatusRow[] {
+  const statuses: TaskPriorityCountsResult['statuses'] = [
+    { key: 'queued', label: 'Queued' },
+    { key: 'processing', label: 'Processing' },
+    { key: 'failed', label: 'Failed' },
+    { key: 'succeeded', label: 'Succeeded' },
+    { key: 'paused', label: 'Paused' },
+  ]
+
+  return PRIORITY_OPTIONS.map((option) => ({
+    key: option.value as YoudubPriorityStatusRow['key'],
+    label: option.value === 'force' ? 'Force+' : option.label,
+    counts: statuses.map((status) => ({
+      ...status,
+      count: 0,
+    })),
+  }))
+}
+
+function StatusCountCell({ count }: { count: number }) {
   return (
-    <div className="rounded-md border px-3 py-2">
-      <div className="text-xs font-medium text-muted-foreground">{item.label}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums">
-        {NUMBER_FORMATTER.format(item.count)}
-      </div>
-    </div>
+    <td className="px-3 py-2 text-right text-sm font-semibold tabular-nums">
+      {NUMBER_FORMATTER.format(count)}
+    </td>
   )
 }
 
@@ -93,13 +109,14 @@ function PriorityCountsPanel({
   isRefreshing: boolean
   onRefresh: () => void
 }) {
-  const counts = result?.counts ?? []
+  const rows = result?.rows?.length ? result.rows : buildEmptyRows()
+  const statuses = result?.statuses?.length ? result.statuses : rows[0]?.counts ?? []
 
   return (
     <div className="space-y-3 rounded-md border p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold tracking-tight">Priority Tasks</h3>
+          <h3 className="text-sm font-semibold tracking-tight">Priority Status</h3>
           <div className="text-xs text-muted-foreground">
             Updated {formatFetchedAt(result?.fetched_at ?? null)}
           </div>
@@ -110,14 +127,30 @@ function PriorityCountsPanel({
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {counts.length > 0 ? (
-          counts.map((item) => <PriorityCountTile key={item.key} item={item} />)
-        ) : (
-          PRIORITY_OPTIONS.map((option) => (
-            <PriorityCountTile key={option.value} item={{ key: option.value as YoudubPriorityCount['key'], label: option.label, count: 0 }} />
-          ))
-        )}
+      <div className="overflow-x-auto rounded-md border">
+        <table className="w-full min-w-[620px] border-collapse text-sm">
+          <thead className="bg-muted/50 text-xs text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2 text-left font-medium">Priority</th>
+              {statuses.map((status) => (
+                <th key={status.key} className="px-3 py-2 text-right font-medium">
+                  {status.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.key} className="border-t">
+                <th className="px-3 py-2 text-left text-sm font-semibold">{row.label}</th>
+                {statuses.map((status) => {
+                  const count = row.counts.find((item) => item.key === status.key)?.count ?? 0
+                  return <StatusCountCell key={status.key} count={count} />
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       {result?.error ? (

@@ -3,7 +3,12 @@
 import { supabase } from '@/lib/supabase'
 import { parseNetscapeCookies, validateCookies } from '@/lib/cookie-parser'
 import { revalidatePath } from 'next/cache'
-import { BiliAccountSummary, TaskPriorityCountsResult, YoudubPriorityCount } from '@/lib/types'
+import {
+  BiliAccountSummary,
+  TaskPriorityCountsResult,
+  YoudubPriorityStatusRow,
+  YoudubTaskStatus,
+} from '@/lib/types'
 
 type AccountActionState = {
   message: string
@@ -36,12 +41,20 @@ type ExistingTaskRow = {
 }
 
 const TASK_PRIORITY_BUCKETS: Array<
-  Pick<YoudubPriorityCount, 'key' | 'label'> & { priority?: number; minPriority?: number }
+  Pick<YoudubPriorityStatusRow, 'key' | 'label'> & { priority?: number; minPriority?: number }
 > = [
   { key: 'low', label: 'Low', priority: 1 },
   { key: 'medium', label: 'Medium', priority: 2 },
   { key: 'high', label: 'High', priority: 3 },
   { key: 'force', label: 'Force+', minPriority: 4 },
+]
+
+const TASK_STATUS_BUCKETS: Array<{ key: YoudubTaskStatus; label: string }> = [
+  { key: 'queued', label: 'Queued' },
+  { key: 'processing', label: 'Processing' },
+  { key: 'failed', label: 'Failed' },
+  { key: 'succeeded', label: 'Succeeded' },
+  { key: 'paused', label: 'Paused' },
 ]
 
 function getFormString(formData: FormData, name: string) {
@@ -303,40 +316,57 @@ export async function getAccounts() {
 
 export async function getTaskPriorityCounts(): Promise<TaskPriorityCountsResult> {
   try {
-    const counts = await Promise.all(
+    const rows = await Promise.all(
       TASK_PRIORITY_BUCKETS.map(async (bucket) => {
-        let query = supabase
-          .from('youdub_task')
-          .select('task_key', { count: 'exact', head: true })
+        const counts = await Promise.all(
+          TASK_STATUS_BUCKETS.map(async (status) => {
+            let query = supabase
+              .from('youdub_task')
+              .select('task_key', { count: 'exact', head: true })
+              .eq('status', status.key)
 
-        if (bucket.minPriority !== undefined) {
-          query = query.gte('priority', bucket.minPriority)
-        } else {
-          query = query.eq('priority', bucket.priority)
-        }
+            if (bucket.minPriority !== undefined) {
+              query = query.gte('priority', bucket.minPriority)
+            } else {
+              query = query.eq('priority', bucket.priority)
+            }
 
-        const { count, error } = await query
-        if (error) throw error
+            const { count, error } = await query
+            if (error) throw error
+
+            return {
+              key: status.key,
+              label: status.label,
+              count: count ?? 0,
+            }
+          })
+        )
 
         return {
           key: bucket.key,
           label: bucket.label,
-          count: count ?? 0,
+          counts,
         }
       })
     )
 
     return {
-      counts,
+      rows,
+      statuses: TASK_STATUS_BUCKETS,
       fetched_at: new Date().toISOString(),
     }
   } catch (error: unknown) {
     return {
-      counts: TASK_PRIORITY_BUCKETS.map((bucket) => ({
+      rows: TASK_PRIORITY_BUCKETS.map((bucket) => ({
         key: bucket.key,
         label: bucket.label,
-        count: 0,
+        counts: TASK_STATUS_BUCKETS.map((status) => ({
+          key: status.key,
+          label: status.label,
+          count: 0,
+        })),
       })),
+      statuses: TASK_STATUS_BUCKETS,
       fetched_at: null,
       error: getErrorMessage(error),
     }
