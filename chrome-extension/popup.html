@@ -10,7 +10,7 @@
     <main>
       <header>
         <h1>Bili Manager</h1>
-        <p>读取当前 Chrome 的 B 站 Cookie 并上传。</p>
+        <p>读取当前 Chrome 的 B 站 Cookie，并在 Cookie 更新后自动同步。</p>
       </header>
 
       <label>
@@ -19,23 +19,23 @@
       </label>
 
       <label>
-        Supabase anon key
-        <input id="supabaseAnonKey" type="password" autocomplete="off" />
-      </label>
-
-      <label>
         账号名称
         <input id="username" type="text" placeholder="留空则使用 B 站 UID" />
       </label>
 
       <label>
-        Server 酱 Key
-        <input id="serverChanKey" type="password" placeholder="可选" />
+        Cookie 上传令牌
+        <input id="uploadToken" type="password" placeholder="首次填写一次" />
+      </label>
+
+      <label class="toggle">
+        <input id="autoSyncEnabled" type="checkbox" checked />
+        <span>Cookie 更新后自动同步，并每 6 小时复核</span>
       </label>
 
       <button id="upload" type="button">上传当前 B 站 Cookie</button>
       <p id="status" role="status"></p>
     </main>
-    <script src="popup.js"></script>
+    <script type="module" src="popup.js"></script>
   </body>
 </html>

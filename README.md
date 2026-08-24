@@ -46,8 +46,8 @@ npm install
 创建 `.env` 文件（或编辑 `env.txt`，它已被硬链接到 `.env`）：
 
 ```env
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_SERVICE_ROLE_KEY=your_server_only_service_role_key
 ```
 
 4. 设置 Supabase 数据库
@@ -88,8 +88,8 @@ npm run dev
 5. 添加环境变量（Environment Variables）：
 
 ```
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGci...
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGci...
 ```
 
 6. 点击 **Deploy**，等待部署完成
@@ -115,8 +115,8 @@ vercel
 
 5. 添加环境变量
 ```bash
-vercel env add NEXT_PUBLIC_SUPABASE_URL
-vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY
+vercel env add SUPABASE_URL
+vercel env add SUPABASE_SERVICE_ROLE_KEY
 ```
 
 6. 重新部署以应用环境变量
@@ -134,7 +134,7 @@ vercel --prod
 
 **Q: 部署后出现数据库连接错误？**
 
-A: 检查环境变量是否正确设置，确保 `NEXT_PUBLIC_SUPABASE_URL` 和 `NEXT_PUBLIC_SUPABASE_ANON_KEY` 都已配置。
+A: 检查环境变量是否正确设置，确保 `SUPABASE_URL` 和服务端专用的 `SUPABASE_SERVICE_ROLE_KEY` 都已配置。
 
 **Q: 如何更新环境变量？**
 
@@ -175,11 +175,15 @@ A: 访问 [https://sct.ftqq.com/](https://sct.ftqq.com/)，微信扫码登录后
 
 仓库内置了一个本地 Chrome 扩展，路径为 `chrome-extension/`。它是自包含工具，不依赖 Next.js 应用运行，只复用同一个 Supabase 表结构和字段。
 
-扩展会读取当前 Chrome 中的 Bilibili Cookie，然后直接写入 Supabase 的 `bili_account` 表。
+扩展会读取当前 Chrome 中的 Bilibili Cookie，通过受保护的
+`bili-cookie-upload` Edge Function 更新 `bili_account`。浏览器端没有
+`service_role` 权限。
 
 ### 扩展配置
 
-扩展需要配置 Supabase 的 `Project URL` 和 `anon/public key`，可在 Supabase Dashboard 的 Settings -> API 中找到。
+扩展需要配置 Supabase 的 `Project URL` 和该账号独立的 Cookie 上传令牌。
+上传令牌只保存在
+`chrome.storage.local`。
 
 ### 安装扩展
 
@@ -187,15 +191,17 @@ A: 访问 [https://sct.ftqq.com/](https://sct.ftqq.com/)，微信扫码登录后
 2. 开启右上角「开发者模式」
 3. 点击「加载已解压的扩展程序」
 4. 选择本仓库的 `chrome-extension/` 目录
-5. 点击扩展图标，填写 Supabase URL 和 anon key
+5. 点击扩展图标，填写 Supabase URL 和 Cookie 上传令牌
 6. 在 Chrome 中登录 B 站后，点击「上传当前 B 站 Cookie」
 
-扩展会记住 Supabase 配置、账号名称和 Server 酱 Key。账号名称留空时，会使用 Cookie 里的 B 站 UID。
+扩展会监听 `SESSDATA`、`bili_jct`、`buvid3` 和 `DedeUserID` 的变化，
+变化后等待 30 秒自动同步，并每 6 小时复核一次。Chrome 必须处于运行状态，
+B站登录完全失效时需要重新登录。账号名称留空时使用 B站账号名称或 UID。
 
 ## 安全说明
 
-- ⚠️ Cookies 和 Server 酱密钥包含敏感信息，请勿分享给他人
-- 🔑 Chrome 扩展会保存 Supabase anon key，只建议个人自用，不要打包公开分发
+- ⚠️ Cookies、Cookie 上传令牌和 Server 酱密钥包含敏感信息，请勿分享给他人
+- 🔑 Chrome 扩展会在本机保存账号级上传令牌，只建议个人自用
 - 🔒 本项目使用 Supabase RLS（行级安全）保护数据
 - 🔐 编辑账号时，敏感密钥会进行脱敏显示
 - 🚫 不同账号的用户 ID 不可互相替换

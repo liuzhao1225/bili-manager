@@ -6,20 +6,22 @@ create table if not exists bili_account (
   sessdata text not null,
   bili_jct text not null,
   server_chan_key text,
+  cookie_upload_token_hash text,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
 -- Enable Row Level Security (RLS)
 alter table bili_account enable row level security;
 
--- Create a policy that allows all operations for now (MVP)
--- In production, you might want to restrict this
+-- Bilibili credentials are backend-only secrets. Browser extensions write
+-- through the protected bili-cookie-upload Edge Function.
 drop policy if exists "Enable all operations for all users" on bili_account;
-create policy "Enable all operations for all users"
-on bili_account
-for all
-using (true)
-with check (true);
+revoke all privileges on table bili_account from public, anon, authenticated;
+grant select, insert, update, delete on table bili_account to service_role;
+
+create unique index if not exists bili_account_cookie_upload_token_hash_uidx
+on bili_account (cookie_upload_token_hash)
+where cookie_upload_token_hash is not null;
 
 create table if not exists youdub_task (
   task_key text primary key,
@@ -102,18 +104,11 @@ alter table youdub_task enable row level security;
 alter table youdub_task_artifact enable row level security;
 
 drop policy if exists "Enable all operations for youdub_task" on youdub_task;
-create policy "Enable all operations for youdub_task"
-on youdub_task
-for all
-using (true)
-with check (true);
-
 drop policy if exists "Enable all operations for youdub_task_artifact" on youdub_task_artifact;
-create policy "Enable all operations for youdub_task_artifact"
-on youdub_task_artifact
-for all
-using (true)
-with check (true);
+revoke all privileges on table youdub_task from public, anon, authenticated;
+revoke all privileges on table youdub_task_artifact from public, anon, authenticated;
+grant select, insert, update, delete on table youdub_task to service_role;
+grant select, insert, update, delete on table youdub_task_artifact to service_role;
 
 create or replace function claim_youdub_task(
   p_worker_id text,
