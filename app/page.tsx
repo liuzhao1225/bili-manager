@@ -1,10 +1,13 @@
-import { getAccounts } from './actions'
+import { getAccounts, getChannelRequests } from './actions'
 import ClientWrapper from '@/components/ClientWrapper'
 
 export const dynamic = 'force-dynamic'
 
 export default async function Home() {
-  const accounts = await getAccounts()
+  const [accounts, channelRequests] = await Promise.all([
+    getAccounts(),
+    getChannelRequests(),
+  ])
 
   return (
     <main className="min-h-screen bg-background p-8">
@@ -16,7 +19,7 @@ export default async function Home() {
           </p>
         </header>
         
-        <ClientWrapper accounts={accounts} />
+        <ClientWrapper accounts={accounts} channelRequests={channelRequests} />
       </div>
     </main>
   )

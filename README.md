@@ -10,6 +10,7 @@
 - 🎨 现代化 UI 设计 (Shadcn UI)
 - 🌙 支持深色模式
 - 💾 使用 Supabase 作为数据库
+- 📺 在 Vercel Server Action 中扫描 YouTube 频道的 Videos / Shorts，并按播放量加入 YouDub 队列
 
 ## 技术栈
 
@@ -152,6 +153,14 @@ A: 支持 Netscape 格式的 cookies.txt 文件。推荐使用 Chrome 浏览器�
 A: 访问 [https://sct.ftqq.com/](https://sct.ftqq.com/)，微信扫码登录后，进入 SendKey 页面复制密钥。
 
 ## 使用说明
+
+### 添加 YouTube 频道
+
+1. 打开 `Channels`，输入 `https://www.youtube.com/@handle` 或 `@handle`
+2. 选择普通候选任务的 priority 和最低播放量
+3. 提交后由 Vercel 直接扫描 Videos / Shorts 并写入 `youdub_task`，无需额外 Python 服务
+4. Shorts 使用 10 倍播放量门槛；最高播放量候选使用 High
+5. Processing、Paused、Succeeded、Failed 默认跳过；勾选“重新加入”可重置 Succeeded / Failed
 
 ### 添加账号
 

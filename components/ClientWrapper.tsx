@@ -2,9 +2,11 @@
 
 import { useState } from 'react'
 import { BiliAccountSummary } from '@/lib/types'
+import type { ChannelRequestSummary } from '@/lib/types'
 import { AccountCard } from './AccountCard'
 import { AccountForm } from './AccountForm'
 import { TaskManager } from './TaskManager'
+import { ChannelManager } from './ChannelManager'
 import { Plus } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import {
@@ -24,8 +26,10 @@ import {
 
 export default function ClientWrapper({
   accounts,
+  channelRequests,
 }: {
   accounts: BiliAccountSummary[] | null
+  channelRequests: ChannelRequestSummary[]
 }) {
   const [isAdding, setIsAdding] = useState(false)
   const accountList = accounts || []
@@ -34,11 +38,16 @@ export default function ClientWrapper({
     <Tabs defaultValue="tasks" className="space-y-6">
       <TabsList>
         <TabsTrigger value="tasks">Tasks</TabsTrigger>
+        <TabsTrigger value="channels">Channels</TabsTrigger>
         <TabsTrigger value="accounts">Accounts ({accountList.length})</TabsTrigger>
       </TabsList>
 
       <TabsContent value="tasks">
         <TaskManager />
+      </TabsContent>
+
+      <TabsContent value="channels">
+        <ChannelManager initialRequests={channelRequests} />
       </TabsContent>
 
       <TabsContent value="accounts" className="space-y-6">

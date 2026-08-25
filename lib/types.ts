@@ -69,3 +69,32 @@ export type TaskPriorityCountsResult = {
   fetched_at: string | null
   error?: string
 }
+
+export type ChannelRequestSummary = {
+  task_key: string
+  url: string
+  priority: number
+  status: YoudubTaskStatus
+  phase?: string | null
+  failure_detail?: string | null
+  metadata: {
+    channel_handle?: string
+    min_view_count?: number
+    requeue_existing?: boolean
+    import_result?: {
+      regular?: number
+      regular_priority?: number
+      low?: number
+      high?: number
+      matched?: number
+      scanned_videos?: number
+      scanned_shorts?: number
+      processing_skipped?: number
+      paused_skipped?: number
+      terminal_skipped?: number
+    }
+  }
+  created_at?: string
+  started_at?: string | null
+  finished_at?: string | null
+}

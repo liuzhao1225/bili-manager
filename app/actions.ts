@@ -2,9 +2,12 @@
 
 import { supabase } from '@/lib/supabase'
 import { parseNetscapeCookies, validateCookies } from '@/lib/cookie-parser'
+import { decideChannelTask } from '@/lib/channel-task-policy'
+import { scanYoutubeChannel, type ChannelVideo } from '@/lib/youtube-channel'
 import { revalidatePath } from 'next/cache'
 import {
   BiliAccountSummary,
+  ChannelRequestSummary,
   TaskPriorityCountsResult,
   YoudubPriorityStatusRow,
   YoudubTaskStatus,
@@ -16,6 +19,11 @@ type AccountActionState = {
 }
 
 type TaskActionState = {
+  message: string
+  success: boolean
+}
+
+type ChannelActionState = {
   message: string
   success: boolean
 }
@@ -102,6 +110,36 @@ function parseYoutubeUrl(url: string) {
   }
 
   throw new Error('无效的 YouTube URL')
+}
+
+function parseYoutubeChannel(value: string) {
+  const input = value.trim().split(/\s+/, 1)[0]
+  if (!input) throw new Error('频道不能为空')
+
+  let handle = input
+  if (input.startsWith('http://') || input.startsWith('https://')) {
+    const url = new URL(input)
+    const hostname = url.hostname.toLowerCase().replace(/^www\./, '')
+    if (!['youtube.com', 'm.youtube.com'].includes(hostname)) {
+      throw new Error('只支持 YouTube 频道链接')
+    }
+    const segment = url.pathname.split('/').filter(Boolean)[0] || ''
+    if (!segment.startsWith('@')) {
+      throw new Error('请使用 youtube.com/@频道名 格式')
+    }
+    handle = decodeURIComponent(segment)
+  }
+
+  handle = handle.replace(/^@/, '').trim()
+  if (!handle || handle.length > 100 || /[/?#\s]/.test(handle)) {
+    throw new Error('无效的 YouTube 频道名')
+  }
+
+  return {
+    handle: `@${handle}`,
+    channelUrl: `https://www.youtube.com/@${handle}`,
+    taskKey: `channel:${handle.toLowerCase()}`,
+  }
 }
 
 function getFormInt(formData: FormData, name: string, fallback: number) {
@@ -324,6 +362,7 @@ export async function getTaskPriorityCounts(): Promise<TaskPriorityCountsResult>
               .from('youdub_task')
               .select('task_key', { count: 'exact', head: true })
               .eq('status', status.key)
+              .or('source.is.null,source.neq.channel_request')
 
             if (bucket.minPriority !== undefined) {
               query = query.gte('priority', bucket.minPriority)
@@ -370,6 +409,222 @@ export async function getTaskPriorityCounts(): Promise<TaskPriorityCountsResult>
       fetched_at: null,
       error: getErrorMessage(error),
     }
+  }
+}
+
+export async function getChannelRequests(): Promise<ChannelRequestSummary[]> {
+  const { data, error } = await supabase
+    .from('youdub_task')
+    .select('task_key, url, priority, status, phase, failure_detail, metadata, created_at, started_at, finished_at')
+    .eq('source', 'channel_request')
+    .order('created_at', { ascending: false })
+    .limit(12)
+
+  if (error) throw error
+  return (data || []) as ChannelRequestSummary[]
+}
+
+function buildChannelTaskPayload(video: ChannelVideo, priority: number, channelUrl: string) {
+  return {
+    task_key: `${video.sourceType}:${video.id}`,
+    youtube_id: video.id,
+    source_type: video.sourceType,
+    url: video.url,
+    priority,
+    status: 'queued',
+    phase: 'queued',
+    skip_prechecks: false,
+    source: 'channel_script',
+    locked_by: null,
+    locked_until: null,
+    failure_reason: null,
+    failure_detail: null,
+    started_at: null,
+    finished_at: null,
+    zh_bvid: null,
+    en_bvid: null,
+    metadata: {
+      channel_url: channelUrl,
+      title: video.title,
+      view_count: video.viewCount,
+    },
+  }
+}
+
+async function getExistingTasks(taskKeys: string[]) {
+  const tasks = new Map<string, { status: string; priority: number }>()
+  for (let start = 0; start < taskKeys.length; start += 500) {
+    const { data, error } = await supabase
+      .from('youdub_task')
+      .select('task_key, status, priority')
+      .in('task_key', taskKeys.slice(start, start + 500))
+    if (error) throw error
+    for (const row of data || []) {
+      tasks.set(row.task_key, {
+        status: row.status,
+        priority: Number(row.priority || 1),
+      })
+    }
+  }
+  return tasks
+}
+
+async function upsertChannelTasks(
+  videos: ChannelVideo[],
+  priority: number,
+  channelUrl: string,
+  requeueExisting: boolean,
+) {
+  if (!videos.length) return { written: 0, processingSkipped: 0, pausedSkipped: 0, terminalSkipped: 0 }
+  const existing = await getExistingTasks(videos.map((video) => `${video.sourceType}:${video.id}`))
+  let processingSkipped = 0
+  let pausedSkipped = 0
+  let terminalSkipped = 0
+  const payloads = videos.flatMap((video) => {
+    const task = existing.get(`${video.sourceType}:${video.id}`)
+    const decision = decideChannelTask(task, priority, requeueExisting)
+    if (!decision.write && decision.reason === 'processing') {
+      processingSkipped += 1
+      return []
+    }
+    if (!decision.write && decision.reason === 'paused') {
+      pausedSkipped += 1
+      return []
+    }
+    if (!decision.write && decision.reason === 'terminal') {
+      terminalSkipped += 1
+      return []
+    }
+    if (!decision.write) return []
+    return [buildChannelTaskPayload(video, decision.priority, channelUrl)]
+  })
+
+  for (let start = 0; start < payloads.length; start += 500) {
+    const { error } = await supabase
+      .from('youdub_task')
+      .upsert(payloads.slice(start, start + 500), { onConflict: 'task_key' })
+    if (error) throw error
+  }
+  return { written: payloads.length, processingSkipped, pausedSkipped, terminalSkipped }
+}
+
+export async function createChannelRequest(_prevState: ChannelActionState, formData: FormData) {
+  let parsed: ReturnType<typeof parseYoutubeChannel> | null = null
+  let startedAt: string | null = null
+  let options: { min_view_count: number; requeue_existing: boolean } | null = null
+  try {
+    parsed = parseYoutubeChannel(getFormString(formData, 'channel'))
+    const priority = Math.min(3, Math.max(1, getTaskPriority(formData, 1)))
+    const minViewCount = Math.max(0, getFormInt(formData, 'min_view_count', 500_000))
+    const requeueExisting = formData.get('requeue_existing') === 'on'
+    options = { min_view_count: minViewCount, requeue_existing: requeueExisting }
+
+    const { data: existing, error: selectError } = await supabase
+      .from('youdub_task')
+      .select('status, phase, locked_until')
+      .eq('task_key', parsed.taskKey)
+      .maybeSingle()
+
+    if (selectError) {
+      return { message: `数据库错误: ${selectError.message}`, success: false }
+    }
+    if (existing?.status === 'paused' && existing.phase === 'channel_processing') {
+      return { message: `${parsed.handle} 正在扫描`, success: false }
+    }
+
+    startedAt = new Date().toISOString()
+    const processingPayload = {
+      task_key: parsed.taskKey,
+      youtube_id: parsed.handle.slice(1),
+      source_type: 'video',
+      url: parsed.channelUrl,
+      priority,
+      status: 'paused',
+      skip_prechecks: false,
+      source: 'channel_request',
+      phase: 'channel_processing',
+      locked_by: null,
+      locked_until: null,
+      failure_reason: null,
+      failure_detail: null,
+      zh_bvid: null,
+      en_bvid: null,
+      metadata: { channel_handle: parsed.handle, ...options },
+      created_at: startedAt,
+      started_at: startedAt,
+      finished_at: null,
+    }
+
+    const { error: processingError } = await supabase
+      .from('youdub_task')
+      .upsert(processingPayload, { onConflict: 'task_key' })
+
+    if (processingError) throw processingError
+
+    const scan = await scanYoutubeChannel(parsed.channelUrl, minViewCount)
+    const ordered = scan.videos.toSorted((a, b) => b.viewCount - a.viewCount)
+    const topVideo = ordered[0]
+    const regularVideos = topVideo ? ordered.slice(1) : []
+    const [regularResult, highResult] = await Promise.all([
+      upsertChannelTasks(regularVideos, priority, parsed.channelUrl, requeueExisting),
+      upsertChannelTasks(topVideo ? [topVideo] : [], 3, parsed.channelUrl, requeueExisting),
+    ])
+
+    const importResult = {
+      regular: regularResult.written,
+      regular_priority: priority,
+      high: highResult.written,
+      matched: scan.videos.length,
+      scanned_videos: scan.scannedVideos,
+      scanned_shorts: scan.scannedShorts,
+      processing_skipped: regularResult.processingSkipped + highResult.processingSkipped,
+      paused_skipped: regularResult.pausedSkipped + highResult.pausedSkipped,
+      terminal_skipped: regularResult.terminalSkipped + highResult.terminalSkipped,
+    }
+    const finishedAt = new Date().toISOString()
+    const { error: completeError } = await supabase
+      .from('youdub_task')
+      .update({
+        status: 'succeeded',
+        phase: 'channel_completed',
+        failure_reason: null,
+        failure_detail: null,
+        finished_at: finishedAt,
+        metadata: {
+          channel_handle: parsed.handle,
+          channel_id: scan.channelId,
+          ...options,
+          import_result: importResult,
+        },
+      })
+      .eq('task_key', parsed.taskKey)
+    if (completeError) throw completeError
+
+    revalidatePath('/')
+    const written = regularResult.written + highResult.written
+    const skipped = importResult.processing_skipped + importResult.paused_skipped + importResult.terminal_skipped
+    return {
+      message: `${parsed.handle} 扫描完成：${scan.scannedVideos} Videos + ${scan.scannedShorts} Shorts，写入 ${written} 条，跳过 ${skipped} 条`,
+      success: true,
+    }
+  } catch (error: unknown) {
+    const detail = getErrorMessage(error)
+    if (parsed && startedAt && options) {
+      const { error: failureError } = await supabase
+        .from('youdub_task')
+        .update({
+          status: 'failed',
+          phase: 'channel_failed',
+          failure_reason: 'channel_import_failed',
+          failure_detail: detail.slice(0, 4000),
+          finished_at: new Date().toISOString(),
+        })
+        .eq('task_key', parsed.taskKey)
+      if (failureError) {
+        return { message: `频道扫描失败：${detail}；状态写入失败：${failureError.message}`, success: false }
+      }
+    }
+    return { message: `频道扫描失败：${detail}`, success: false }
   }
 }
 
