@@ -208,12 +208,15 @@ export function TaskManager() {
             required
             className="min-h-64 font-mono text-xs"
             placeholder={[
-              'https://www.youtube.com/watch?v=XBu54nfzxAQ',
-              'https://www.youtube.com/watch?v=rbu7Zu5X1zI',
-              'https://www.youtube.com/watch?v=zjkBMFhNj_g',
-              'https://www.youtube.com/watch?v=kYkIdXwW2AE',
+              '粘贴包含 YouTube 链接的任意文本，例如：',
+              '[PARA 方法](https://www.youtube.com/watch?v=T6Mfl1OywM8)',
+              '每周计划：https://youtu.be/MyWmGDnWhjE',
             ].join('\n')}
+            aria-describedby="task-urls-help"
           />
+          <p id="task-urls-help" className="text-xs text-muted-foreground">
+            自动提取文本中的 YouTube 视频链接，支持文章、聊天记录和 Markdown，无需每行一个；重复视频自动去重。
+          </p>
         </div>
 
         <div className="space-y-1.5">

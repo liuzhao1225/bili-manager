@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { parseNetscapeCookies, validateCookies } from '@/lib/cookie-parser'
 import { decideChannelTask } from '@/lib/channel-task-policy'
 import { scanYoutubeChannel, type ChannelVideo } from '@/lib/youtube-channel'
+import { extractYoutubeUrls, parseYoutubeUrl } from '@/lib/youtube-url'
 import { revalidatePath } from 'next/cache'
 import {
   BiliAccountSummary,
@@ -86,32 +87,6 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
 }
 
-function parseYoutubeUrl(url: string) {
-  const cleanUrl = url.trim().split(/\s+/, 1)[0].split('&', 1)[0]
-  const patterns: Array<['video' | 'short', RegExp]> = [
-    ['short', /(?:https?:\/\/)?(?:www\.)?youtube\.com\/shorts\/([A-Za-z0-9_-]{11})/],
-    ['video', /(?:https?:\/\/)?(?:www\.)?youtube\.com\/watch\?v=([A-Za-z0-9_-]{11})/],
-    ['video', /(?:https?:\/\/)?youtu\.be\/([A-Za-z0-9_-]{11})/],
-  ]
-
-  for (const [sourceType, pattern] of patterns) {
-    const match = cleanUrl.match(pattern)
-    if (!match) continue
-
-    const youtubeId = match[1]
-    return {
-      sourceType,
-      youtubeId,
-      url: sourceType === 'short'
-        ? `https://www.youtube.com/shorts/${youtubeId}`
-        : `https://www.youtube.com/watch?v=${youtubeId}`,
-      taskKey: `${sourceType}:${youtubeId}`,
-    }
-  }
-
-  throw new Error('无效的 YouTube URL')
-}
-
 function parseYoutubeChannel(value: string) {
   const input = value.trim().split(/\s+/, 1)[0]
   if (!input) throw new Error('频道不能为空')
@@ -159,12 +134,9 @@ function getTaskPriority(formData: FormData, fallback = 1) {
   return getFormInt(formData, 'priority', fallback)
 }
 
-function splitTaskUrls(formData: FormData) {
+function extractTaskUrls(formData: FormData) {
   const text = getFormString(formData, 'urls') || getFormString(formData, 'url')
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
+  return extractYoutubeUrls(text)
 }
 
 function buildTaskPayload(url: string, priority: number, source: string) {
@@ -632,10 +604,10 @@ export async function createTask(_prevState: TaskActionState, formData: FormData
   try {
     const priority = getTaskPriority(formData, 2)
     const source = priority >= 4 ? 'force' : 'manual'
-    const urls = splitTaskUrls(formData)
+    const urls = extractTaskUrls(formData)
 
     if (urls.length === 0) {
-      return { message: '缺少 YouTube URL', success: false }
+      return { message: '未找到 YouTube 链接，请粘贴包含视频链接的文本', success: false }
     }
 
     const invalidUrls: string[] = []

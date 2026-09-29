@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:urls": "node --experimental-strip-types --test tests/youtube-url.test.mjs",
     "test:channel": "node --experimental-strip-types --test tests/channel-task-policy.test.mjs",
     "test:extension": "node --test tests/chrome-extension-uploader.test.mjs"
   },
