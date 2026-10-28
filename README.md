@@ -227,3 +227,9 @@ B站登录完全失效时需要重新登录。账号名称留空时使用 B站�
 ## License
 
 MIT
+
+### YouTube Link Extractor 直接入队
+
+本地 `youtube-link-extractor` 扩展通过 `POST /api/tasks` 提交 `{ urls: string[], priority: "medium" | "high" }`。接口复用网页 `createTask` 的入队规则及结果消息，Supabase 密钥保留在服务端。普通页使用 Medium（2），订阅页使用 High（3）。
+
+该接口沿用现有任务表单的访问策略，校验同站 Origin 或本机扩展 Origin `chrome-extension://nfebljdpfbnlbcjhlenpkhaapnfkhkee`，不开放通配 CORS；Origin 校验不作为身份认证。扩展加载路径变化导致 ID 改变时，需同步更新接口中的扩展 Origin。
